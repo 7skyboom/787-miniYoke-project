@@ -14,6 +14,9 @@ class FCC :
         self.fcu = fcu
         self.aviBus = aviBus
 
+        self.flaps = 0 # 0, 1, 2, 3
+        self.gear = False #False = up, True = down
+
     def setFlightCommands(self, nx, nz, p):
         self.nx = nx
         self.nz = nz
@@ -29,10 +32,14 @@ class FCC :
     def sendButtonsState(self, flapsUp, flapsDown, apDisconnect, gearDown, previousFlapsUp, previousFlapsDown, previousApDisconnect, previousGearDown):
         if flapsUp and not previousFlapsUp :
             print('Flaps up button pushed')
-            self.aviBus.sendMsg('FLAPS UP')
+            self.flaps += 1
+            self.flaps = 0 if self.flaps > 3 else self.flaps
+            self.aviBus.sendMsg('YOKE flaps={}'.format(self.flaps))
         if flapsDown and not previousFlapsDown :
             print('Flaps down button pushed')
-            self.aviBus.sendMsg('FLAPS DOWN')
+            self.flaps -= 1
+            self.flaps = 0 if self.flaps < 0 else self.flaps
+            self.aviBus.sendMsg('YOKE flaps={}'.format(self.flaps))
         if apDisconnect and not previousApDisconnect :
             print('AP disconnect button pushed')
             if self.state == 'AP_ENGAGED':
@@ -43,7 +50,8 @@ class FCC :
 
         if gearDown and not previousGearDown :
             print('Gear down button pushed')
-            self.aviBus.sendMsg('GEAR DOWN')
+            self.gear = True if not self.gear else False
+            self.aviBus.sendMsg('YOKE gear={}'.format(self.gear))
 
 class MiniYoke :
     def __init__(self, fcc, fmgs, flightModel, filterOn, alpha):
@@ -153,15 +161,15 @@ class MiniYoke :
             time.sleep(0.1)
 
     def getFlightCommands(self, pitchAxisValue, rollAxisValue):
-        self.nx = self.NxLaw()
-        self.nz = self.NzLaw(pitchAxisValue)
-        self.p = self.PLaw(rollAxisValue)
+        self.nx = self.nxLaw()
+        self.nz = self.nzLaw(pitchAxisValue)
+        self.p = self.pLaw(rollAxisValue)
         
     
-    def NxLaw(self):
+    def nxLaw(self):
         return 0
 
-    def NzLaw(self, pitchAxisValue):
+    def nzLaw(self, pitchAxisValue):
         if self.filterOn:
             self.filteredPitchAxisValue = self.alpha * pitchAxisValue + (1 - self.alpha) * self.filteredPitchAxisValue
             nz = self.nzMin + (self.nzMax - self.nzMin) * (self.filteredPitchAxisValue - self.pitchAxisMin) / (self.pitchAxisMax - self.pitchAxisMin)
@@ -175,7 +183,7 @@ class MiniYoke :
         #return -2
         return max(self.fmgs.nzMin, min(self.fmgs.nzMax, nz))
 
-    def PLaw(self, rollAxisValue):
+    def pLaw(self, rollAxisValue):
         if self.filterOn:
             self.filteredRollAxisValue = self.alpha * rollAxisValue + (1 - self.alpha) * self.filteredRollAxisValue
             p = self.pMin + (self.pMax - self.pMin) * (self.filteredRollAxisValue - self.rollAxisMin) / (self.rollAxisMax - self.rollAxisMin)
