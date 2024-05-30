@@ -2,16 +2,16 @@ import threading, sys
 from systems import FCC, MiniYoke, ApLAT, ApLONG, FMGS, FCU, FlightModel
 from bus import AviBus
 
-aviBus = AviBus(appName="MiniYokeModule", prod=True)
+aviBus = AviBus(appName="MiniYokeModule", adress="192.168.0.255:2010")
 
 apLat = ApLAT()
 apLong = ApLONG()
-fmgs = FMGS(prod=True)
+fmgs = FMGS()
 fcu = FCU()
 flightModel = FlightModel()
 
 fcc = FCC(fcu, aviBus)
-miniYoke = MiniYoke(fcc, fmgs, flightModel, filterOn=False, alpha=0.1)
+miniYoke = MiniYoke(fcc, fmgs, flightModel, alphaFilter=0.1)
 
 running = True
 
@@ -77,9 +77,9 @@ def main():
                 aviBus.sendMsg('APLatControl rollRate={}'.format(apLat.p))
                 
 
-                #print('Sent APNxControl nx={}'.format(apLong.nx))
-                #print('Sent APNzControl nz={}'.format(apLong.nz))
-                #print('Sent APLatControl p={}'.format(apLat.p))
+                print('Sent APNxControl nx={}'.format(apLong.nx))
+                print('Sent APNzControl nz={}'.format(apLong.nz))
+                print('Sent APLatControl p={}'.format(apLat.p))
 
                 apLat.setReady(False)
                 apLong.setReady(False)

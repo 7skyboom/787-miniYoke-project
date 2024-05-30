@@ -12,6 +12,7 @@ class FmgsTest():
         self.alphaMax = 0
         self.alphaMin = 0
         self.phiMaxManuel = 0
+        self.phiMinManuel = 0
         self.phiMaxAutomatique = 0
         self.fpaMax = 0
         self.fpaMin = 0
@@ -26,6 +27,7 @@ class FmgsTest():
         self.alphaMaxData = []
         self.alphaMinData = []
         self.phiMaxManuelData = []
+        self.phiMinManuelData = []
         self.phiMaxAutomatiqueData = []
         self.fpaMaxData = []
         self.fpaMinData = []
@@ -35,18 +37,34 @@ class FmgsTest():
         return regexToSend
 
     def setData(self, nxMax, nxMin, nzMax, nzMin, pMax, pMin, alphaMax, alphaMin, phiMaxManuel, phiMaxAutomatique, fpaMax, fpaMin):
-        self.nxMax = nxMax
-        self.nxMin = nxMin
-        self.nzMax = nzMax
-        self.nzMin = nzMin
-        self.pMax = pMax
-        self.pMin = pMin
-        self.alphaMax = alphaMax
-        self.alphaMin = alphaMin
-        self.phiMaxManuel = phiMaxManuel
-        self.phiMaxAutomatique = phiMaxAutomatique
-        self.fpaMax = fpaMax
-        self.fpaMin = fpaMin
+        self.nxMax = float(nxMax)
+        self.nxMin = float(nxMin)
+        self.nzMax = float(nzMax)
+        self.nzMin = float(nzMin)
+        self.pMax = float(pMax)
+        self.pMin = float(pMin)
+        self.alphaMax = float(alphaMax)
+        self.alphaMin = float(alphaMin)
+        self.phiMaxManuel = float(phiMaxManuel)
+        self.phiMinManuel = - self.phiMaxManuel
+        self.phiMaxAutomatique = float(phiMaxAutomatique)
+        self.fpaMax = float(fpaMax)
+        self.fpaMin = float(fpaMin)
+    
+    def resetRecord(self):
+        self.nxMaxData = []
+        self.nxMinData = []
+        self.nzMaxData = []
+        self.nzMinData = []
+        self.pMaxData = []
+        self.pMinData = []
+        self.alphaMaxData = []
+        self.alphaMinData = []
+        self.phiMaxManuelData = []
+        self.phiMinManuelData = []
+        self.phiMaxAutomatiqueData = []
+        self.fpaMaxData = []
+        self.fpaMinData = []
     
 class ApLATTest():
     def __init__(self):
@@ -56,12 +74,15 @@ class ApLATTest():
         self.pData = []
     
     def getRegex(self):
-        regexToSend = self.sendRegex.format(self.p)
+        regexToSend = self.regex.format(self.p)
         
         return regexToSend
     
     def setData(self, p):
         self.p = p
+
+    def resetRecord(self):
+        self.pData = []
 
 class ApLONGTest():
     def __init__(self):
@@ -71,22 +92,20 @@ class ApLONGTest():
         self.nxData = []
         self.nzData = []
 
-        self.regexNx = 'AP_LONGI Nx={}'
-        self.regexNz = 'AP_LONGI Nz={}'
-    
-    def getRegexNx(self):
-        regexToSend = self.sendRegex.format(self.nx)
-        
-        return regexToSend
-    
-    def getRegexNz(self):
-        regexToSend = self.sendRegex.format(self.nz)
+        self.regex = 'AP_LONG nx={} nz={}'
+
+    def getRegex(self):
+        regexToSend = self.regex.format(self.nx, self.nz)
         
         return regexToSend
     
     def setData(self, nx, nz):
         self.nx = nx
         self.nz = nz
+    
+    def resetRecord(self):
+        self.nxData = []
+        self.nzData = []
 
 class StateVectorTest():
     def __init__(self):
@@ -126,10 +145,19 @@ class StateVectorTest():
         self.fpa = float(msg[5])
         self.psi = float(msg[6])
         self.phi = float(msg[7])
+    
+    def resetRecord(self):
+        self.xData = []
+        self.yData = []
+        self.zData = []
+        self.VpData = []
+        self.fpaData = []
+        self.psiData = []
+        self.phiData = []
 
 class FcuTest():
     def __init__(self):
-        self.apState = 'OFF'
+        self.apState = 'off'
         self.regex = 'FCUAP1 push'
 
         self.apStateData = []
@@ -140,19 +168,28 @@ class FcuTest():
     def setApState(self, apState):
         self.apState = apState
     
+    def resetRecord(self):
+        self.apStateData = []
+    
 class FccTest():
-    def __init__(self):
+    def __init__(self, fcu):
         self.nx = 0
         self.nz = 0
         self.p = 0
+        self.flaps = 0
+        self.gear = False
+        self.fcu = fcu
 
         self.nxData = []
         self.nzData = []
         self.pData = []
 
-        self.nxRegex = 'APNxControl nx=(\S+)'
-        self.nzRegex = 'APNzControl nz=(\S+)'
-        self.pRegex = 'APLatControl rollRate=(\S+)'
+        self.nxRegex = '^APNxControl nx=(\S+)'
+        self.nzRegex = '^APNzControl nz=(\S+)'
+        self.pRegex = '^APLatControl rollRate=(\S+)'
+        self.flapsRegex = '^VoletState=(\S+)'
+        self.gearRegex = '^LandingGearState=(\S+)'
+        self.apAckRegex = '^FCUAP1 (.*)'
     
     def nxParser(self, *msg):
         self.nx = float(msg[1])
@@ -162,6 +199,24 @@ class FccTest():
     
     def pParser(self, *msg):
         self.p = float(msg[1])
+    
+    def flapsParser(self, *msg):
+        self.flaps = float(msg[1])
+    
+    def gearParser(self, *msg):
+        if msg[1] == 'True':
+            self.gear = True
+        else:
+            self.gear = False
+    
+    def apAckParser(self, *msg):
+        print("AP Ack: ", msg[1])
+        self.fcu.apState = msg[1]
+    
+    def resetRecord(self):
+        self.nxData = []
+        self.nzData = []
+        self.pData = []
 
 class DataSampler():
     def __init__(self, fmgs, apLat, apLong, stateVector, fcu, fcc):
@@ -192,6 +247,7 @@ class DataSampler():
                 self.sampleStateVector(self.stateVector)
                 self.sampleFcu(self.fcu)
                 self.samplefcc(self.fcc)
+                
 
             time.sleep(0.1)
 
@@ -205,56 +261,145 @@ class DataSampler():
         fmgs.alphaMaxData.append(fmgs.alphaMax)
         fmgs.alphaMinData.append(fmgs.alphaMin)
         fmgs.phiMaxManuelData.append(fmgs.phiMaxManuel)
+        fmgs.phiMinManuelData.append(fmgs.phiMinManuel)
         fmgs.phiMaxAutomatiqueData.append(fmgs.phiMaxAutomatique)
         fmgs.fpaMaxData.append(fmgs.fpaMax)
         fmgs.fpaMinData.append(fmgs.fpaMin)
         
     def sampleApLat(self, apLat):
+        apLat.pData.append(apLat.p)
         pass
     
     def sampleApLong(self, apLong):
+        apLong.nxData.append(apLong.nx)
         pass
 
     def sampleStateVector(self, stateVector):
-        pass
+        stateVector.xData.append(stateVector.x)
+        stateVector.yData.append(stateVector.y)
+        stateVector.zData.append(stateVector.z)
+        stateVector.VpData.append(stateVector.Vp)
+        stateVector.fpaData.append(stateVector.fpa)
+        stateVector.psiData.append(stateVector.psi)
+        stateVector.phiData.append(stateVector.phi)
+        
 
     def sampleFcu(self, fcu):
-        pass
+        fcu.apStateData.append(fcu.apState)
     
     def samplefcc(self, fcc):
         fcc.nxData.append(fcc.nx)
         fcc.nzData.append(fcc.nz)
         fcc.pData.append(fcc.p)
-
     
     def stop(self):
         self.doSample = False
-        #self.sampleThread.join()
     
     def reset(self):
-        pass
+        self.fmgs.resetRecord()
+        self.apLat.resetRecord()
+        self.apLong.resetRecord()
+        self.stateVector.resetRecord()
+        self.fcu.resetRecord()
+        self.fcc.resetRecord()
     
     def end(self):
         self.threadRunning = False
     
-    def plotFirstTestData(self):
-        nx = self.fcc.nxData
+    def plotNzLimitation(self):
         nz = self.fcc.nzData
-        p = self.fcc.pData
         nzMax = self.fmgs.nzMaxData
         nzMin = self.fmgs.nzMinData
 
         plt.figure(figsize=(10, 6))
 
-        plt.plot(nz, label='FCC Nz')
-        plt.plot(nzMax, label='FMGS NzMax')
-        plt.plot(nzMin, label='FMGS NzMin')
-        plt.title('FCC Nz vs FMGS NzMax')
-        plt.xlabel('Sample')
+        plt.plot(nz, label='Nz')
+        plt.plot(nzMax, label='NzMax')
+        plt.plot(nzMin, label='NzMin')
+        plt.title('FCC Nz vs FMGS NzMax & NzMin')
+        plt.xlabel('time (ms)')
         plt.ylabel('Nz')
         plt.legend()
 
         plt.tight_layout()
         plt.show()
 
-        
+    def plotFpaLimitation(self):
+        fpa = self.stateVector.fpaData
+        fpaMax = self.fmgs.fpaMaxData
+        fpaMin = self.fmgs.fpaMinData
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(fpa, label='fpa (rad)')
+        plt.plot(fpaMax, label='fpa max (rad)')
+        plt.plot(fpaMin, label='fpa min (rad)')
+        plt.title('StateVector FPA vs FMGS FpaMax & FpaMin')
+        plt.xlabel('time (ms)')
+        plt.ylabel('FPA')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.show()
+
+    def plotPLimitationTest(self):
+        p = self.fcc.pData
+        pMax = self.fmgs.pMaxData
+        pMin = self.fmgs.pMinData
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(p, label='p (rad/s)')
+        plt.plot(pMax, label='p Max (rad/s)')
+        plt.plot(pMin, label='p Min (rad/s)')
+        plt.title('FCC P vs FMGS PMax & PMin')
+        plt.xlabel('time (ms)')
+        plt.ylabel('P')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.show()
+    
+    def plotPhiLimitationTest(self):
+        phiMax = self.fmgs.phiMaxManuelData
+        phiMin = self.fmgs.phiMinManuelData
+        phi = self.stateVector.phiData
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(phi, label='Phi (rad)')
+        plt.plot(phiMax, label='PhiMax (rad)')
+        plt.plot(phiMin, label='PhiMin (rad)')
+        plt.title('FCC Phi Limitation')
+        plt.xlabel('time (ms)')
+        plt.ylabel('Phi')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.show()
+    
+    def plotApTest(self):
+        nx = self.fcc.nxData
+        nz = self.fcc.nzData
+        p = self.fcc.pData
+
+        nxAp = self.apLong.nxData
+        nzAp = self.apLong.nzData
+        pAp = self.apLat.pData
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(nx, label='Nx')
+        plt.plot(nz, label='Nz')
+        plt.plot(p, label='P')
+        plt.plot(nxAp, label='Nx AP')
+        plt.plot(nzAp, label='Nz AP')
+        plt.plot(pAp, label='P AP')
+
+        plt.title('FCC vs AP')
+        plt.xlabel('time (ms)')
+        plt.ylabel('Value')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.show()

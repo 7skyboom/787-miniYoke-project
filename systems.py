@@ -15,7 +15,7 @@ class FCC :
         self.aviBus = aviBus
 
         self.flaps = 0 # 0, 1, 2, 3
-        self.gear = False #False = up, True = down
+        self.gear = False #False = down, True = up
 
     def setFlightCommands(self, nx, nz, p):
         self.nx = nx
@@ -32,29 +32,29 @@ class FCC :
     def sendButtonsState(self, flapsUp, flapsDown, apDisconnect, gearDown, previousFlapsUp, previousFlapsDown, previousApDisconnect, previousGearDown):
         if flapsUp and not previousFlapsUp :
             print('Flaps up button pushed')
-            self.flaps += 1
-            self.flaps = 0 if self.flaps > 3 else self.flaps
-            self.aviBus.sendMsg('YOKE flaps={}'.format(self.flaps))
-        if flapsDown and not previousFlapsDown :
-            print('Flaps down button pushed')
             self.flaps -= 1
             self.flaps = 0 if self.flaps < 0 else self.flaps
-            self.aviBus.sendMsg('YOKE flaps={}'.format(self.flaps))
+            print('Flaps =', self.flaps)
+            self.aviBus.sendMsg('VoletState={}'.format(self.flaps))
+        if flapsDown and not previousFlapsDown :
+            print('Flaps down button pushed')
+            self.flaps += 1
+            self.flaps = 3 if self.flaps > 3 else self.flaps
+            print('Flaps =', self.flaps)
+            self.aviBus.sendMsg('VoletState={}'.format(self.flaps))
         if apDisconnect and not previousApDisconnect :
             print('AP disconnect button pushed')
             if self.state == 'AP_ENGAGED':
-                print('fcc state switch from AP_ENGAGED to MANUAL')
                 self.aviBus.sendMsg('FCUAP1 off') # Send acknowledge message to the fcu
                 self.state = 'MANUAL'
                 self.fcu.setApState('OFF')
-
         if gearDown and not previousGearDown :
-            print('Gear down button pushed')
             self.gear = True if not self.gear else False
-            self.aviBus.sendMsg('YOKE gear={}'.format(self.gear))
+            print("Gear = ", self.gear, "(False = down, True = up)")
+            self.aviBus.sendMsg('LandingGearState={}'.format(self.gear))
 
 class MiniYoke :
-    def __init__(self, fcc, fmgs, flightModel, filterOn, alpha):
+    def __init__(self, fcc, fmgs, flightModel, alphaFilter):
         self.nx = 0
         self.nz = 0
         self.p = 0
@@ -76,10 +76,12 @@ class MiniYoke :
         self.rollAxis = 0
 
         self.nzMin = -2
-        self.nzMax = 4
-
+        self.nzMax = 3
         self.pMin = -0.35
         self.pMax = 0.35
+
+        self.nzMargin = 0.80
+        self.pMargin = 0.90
 
         self.flapsUpButton = 11
         self.flapsDownButton = 10
@@ -101,10 +103,9 @@ class MiniYoke :
         self.rollAxisMax = 1
         self.rollAxisMin = -1
 
-        self.filterOn = filterOn
         self.filteredPitchAxisValue = 0
         self.filteredRollAxisValue = 0
-        self.alpha = alpha  # Coefficient for low pass filter
+        self.alpha = alphaFilter  # Coefficient for low pass filter
 
 
     def begin(self):
@@ -122,10 +123,6 @@ class MiniYoke :
 
         joystick = pygame.joystick.Joystick(0)
         joystick.init()
-
-        print(f"Nom du joystick : {joystick.get_name()}")
-        print(f"Nombre d'axes : {joystick.get_numaxes()}")
-        print(f"Nombre de boutons : {joystick.get_numbuttons()}")
 
         self.joystick = joystick
 
@@ -154,48 +151,40 @@ class MiniYoke :
 
             self.getFlightCommands(self.pitchAxisValue, self.rollAxisValue)
             self.fcc.setFlightCommands(self.nx, self.nz, self.p)
-            #print("pitch Axis:")
-            #print(self.pitchAxisValue)
-            #print("roll Axis")
-            #print(self.rollAxisValue)
             time.sleep(0.1)
 
     def getFlightCommands(self, pitchAxisValue, rollAxisValue):
-        self.nx = self.nxLaw()
+        self.nx = self.nxLaw(self.throttleAxisValue)
         self.nz = self.nzLaw(pitchAxisValue)
         self.p = self.pLaw(rollAxisValue)
         
     
-    def nxLaw(self):
-        return 0
+    def nxLaw(self, throttleAxisValue):
+        return 1
 
     def nzLaw(self, pitchAxisValue):
-        if self.filterOn:
-            self.filteredPitchAxisValue = self.alpha * pitchAxisValue + (1 - self.alpha) * self.filteredPitchAxisValue
-            nz = self.nzMin + (self.nzMax - self.nzMin) * (self.filteredPitchAxisValue - self.pitchAxisMin) / (self.pitchAxisMax - self.pitchAxisMin)
-        else:
-            nz = self.nzMin + (self.nzMax - self.nzMin) * (pitchAxisValue - self.pitchAxisMin) / (self.pitchAxisMax - self.pitchAxisMin)
+
+        if self.flightModel.fpa <= self.fmgs.fpaMin*self.nzMargin and pitchAxisValue < 0:
+            return self.fmgs.nzMax
+            
+        elif self.flightModel.fpa >= self.fmgs.fpaMax*self.nzMargin and pitchAxisValue > 0:
+            return self.fmgs.nzMin
+
+        self.filteredPitchAxisValue = self.alpha * pitchAxisValue + (1 - self.alpha) * self.filteredPitchAxisValue
+        nz = self.nzMin + (self.nzMax - self.nzMin) * (self.filteredPitchAxisValue - self.pitchAxisMin) / (self.pitchAxisMax - self.pitchAxisMin)
 
 
-        if self.flightModel.fpa < self.fmgs.fpaMin or self.flightModel.fpa > self.fmgs.fpaMax:
-            nz = 1
-
-        #return -2
         return max(self.fmgs.nzMin, min(self.fmgs.nzMax, nz))
 
     def pLaw(self, rollAxisValue):
-        if self.filterOn:
-            self.filteredRollAxisValue = self.alpha * rollAxisValue + (1 - self.alpha) * self.filteredRollAxisValue
-            p = self.pMin + (self.pMax - self.pMin) * (self.filteredRollAxisValue - self.rollAxisMin) / (self.rollAxisMax - self.rollAxisMin)
-        else:
-            p = self.pMin + (self.pMax - self.pMin) * (rollAxisValue - self.rollAxisMin) / (self.rollAxisMax - self.rollAxisMin)
+        self.filteredRollAxisValue = self.alpha * rollAxisValue + (1 - self.alpha) * self.filteredRollAxisValue
+        p = self.pMin + (self.pMax - self.pMin) * (self.filteredRollAxisValue - self.rollAxisMin) / (self.rollAxisMax - self.rollAxisMin)
 
-        
-        if self.flightModel.phi < self.fmgs.phiMin and self.rollAxisValue < 0:
+        if self.flightModel.phi < self.fmgs.phiMin*self.pMargin and self.rollAxisValue < 0:
             p = 0
-        if self.flightModel.phi > self.fmgs.phiMax and self.rollAxisValue > 0:
+        elif self.flightModel.phi > self.fmgs.phiMax*self.pMargin and self.rollAxisValue > 0:
             p = 0
-    
+
         return max(self.fmgs.pMin, min(self.fmgs.pMax, p))
     
     def end(self):
@@ -210,7 +199,7 @@ class ApLAT :
         self.regex = '^AP_LAT p=(\S+)'
     
     def parser(self, *msg):
-        self.p = msg[1]
+        self.p = float(msg[1])
         self.ready = True # apLat data is ready to be sent
 
         print('Received message from AP_LAT :')
@@ -227,8 +216,8 @@ class ApLONG :
         self.regex = '^AP_LONG nx=(\S+) nz=(\S+)'
     
     def parser(self, *msg):
-        self.nx = msg[1]
-        self.nz = msg[2]
+        self.nx = float(msg[1])
+        self.nz = float(msg[2])
         print('Received message from AP_LONG :')
         print('nx =', self.nx)
         print('nz =', self.nz)
@@ -239,54 +228,41 @@ class ApLONG :
         self.ready = ready
 
 class FMGS : 
-    def __init__(self, prod=True):
-        self.nxMax = 0
-        self.nxMin = 0
-        self.nzMax = 0
-        self.nzMin = 0
-        self.pMax = 0
-        self.pMin = 0
-        self.fpaMax = 0 # Flight Path Angle = Gamma here
-        self.fpaMin = 0
-        self.phiMax = 0
-        self.fpaMax = 0
+    def __init__(self):
+        self.nxMax = 0.5
+        self.nxMin = -1
+        self.nzMax = 2.5
+        self.nzMin = -1.5
+        self.pMax = 0.7
+        self.pMin = -0.7
+        self.phiMax = 1.152 # 1.152 rad = 66°
+        self.phiMin = -self.phiMax
+        self.fpaMax = 0.175 # 0.175 rad = 10° # Flight Path Angle = Gamma here
+        self.fpaMin = - 0.262
         self.regex = '^Performances NxMax=(\S+) NxMin=(\S+) NzMax=(\S+) NzMin=(\S+) PMax=(\S+) PMin=(\S+) AlphaMax=(\S+) AlphaMin=(\S+) PhiMaxManuel=(\S+) PhiMaxAutomatique=(\S+) GammaMax=(\S+) GammaMin=(\S+)'
-        
-        self.prod = prod
-        if self.prod:
-            self.nxMax = 0.5
-            self.nxMin = -1
-            self.nzMax = 2.5
-            self.nzMin = -1.5
-            self.pMax = 0.7
-            self.pMin = -0.7
-            self.phiMax = 1.152 # 1.152 rad = 66°
-            self.phiMin = -self.phiMax
-            self.fpaMax = 0.175 # 0.175 rad = 10°
-            self.fpaMin = - 0.5 # - 0.262 rad = - 15°
             
             
     def parser(self, *msg):
-        self.nxMax = msg[1]
-        self.nxMin = msg[2]
-        self.nzMax = msg[3]
-        self.nzMin = msg[4]
-        self.pMax = msg[5]
-        self.pMin = msg[6]
-        self.phiMax = msg[9]
-        self.fpaMax = msg[10]
-        self.fpaMin = msg[11]
+        self.nxMax = float(msg[1])
+        self.nxMin = float(msg[2])
+        self.nzMax = float(msg[3])
+        self.nzMin = float(msg[4])
+        self.pMax = float(msg[5])
+        self.pMin = float(msg[6])
+        self.phiMax = float(msg[9])
+        self.fpaMax = float(msg[11])
+        self.fpaMin = float(msg[12])
 
-        print('Received message from FMGS :')
-        print('nxMax =', self.nxMax)
-        print('nxMin =', self.nxMin)
-        print('nzMax =', self.nzMax)
-        print('nzMin =', self.nzMin)
-        print('pMax =', self.pMax)
-        print('pMin =', self.pMin)
-        print('phiMax =', self.phiMax)
-        print('fpaMax =', self.fpaMax)
-        print('fpaMin =', self.fpaMin)
+        #print('Received message from FMGS :')
+        #print('nxMax =', self.nxMax)
+        #print('nxMin =', self.nxMin)
+        #print('nzMax =', self.nzMax)
+        #print('nzMin =', self.nzMin)
+        #print('pMax =', self.pMax)
+        #print('pMin =', self.pMin)
+        #print('phiMax =', self.phiMax)
+        #print('fpaMax =', self.fpaMax)
+        #print('fpaMin =', self.fpaMin)
         
 class FCU :
     AP_STATE = Enum('ON','OFF')
@@ -328,6 +304,6 @@ class FlightModel :
         #print('y =', self.y)
         #print('z =', self.z)
         #print('Vp =', self.Vp)
-        print('fpa =', self.fpa)
+        #print('fpa =', self.fpa)
         #print('psi =', self.psi)
-        print('phi =', self.phi)
+        #print('phi =', self.phi)
